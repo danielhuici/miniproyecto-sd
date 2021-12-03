@@ -162,54 +162,9 @@ func (n Node) decodeMessage(decodedMessage Message, se *SimulationEngine) {
 	}
 }
 
-// TODO: Optimizar !!
 func (n Node) insertarEventoRemoto(event Event, se *SimulationEngine, source int) {
 	event = traducirIdTransicion(event)
-
-	if n.ID == 0 {
-		if source == 1 {
-			se.IlEventosRemoto0.inserta(event)
-		} else if source == 2 {
-			se.IlEventosRemoto1.inserta(event)
-		}
-	} else if n.ID == 1 {
-		if source == 0 {
-			se.IlEventosRemoto0.inserta(event)
-		} else if source == 2 {
-			se.IlEventosRemoto1.inserta(event)
-		}
-	} else if n.ID == 2 {
-		if source == 0 {
-			se.IlEventosRemoto0.inserta(event)
-		} else if source == 1 {
-			se.IlEventosRemoto1.inserta(event)
-		}
-	}
-}
-
-func reverseObtenerIDVecino(idLista int, nodeId int) int {
-
-	if nodeId == 0 {
-		if idLista == 0 {
-			return 1
-		} else if idLista == 1 {
-			return 2
-		}
-	} else if nodeId == 1 {
-		if idLista == 0 {
-			return 0
-		} else if idLista == 1 {
-			return 2
-		}
-	} else if nodeId == 2 {
-		if idLista == 0 {
-			return 0
-		} else if idLista == 1 {
-			return 1
-		}
-	}
-
-	return -1
+	se.IlEventosRemotos[source].inserta(event)
 }
 
 func (n Node) LaunchReceiver(se *SimulationEngine) {

@@ -31,12 +31,11 @@ type SimulationEngine struct {
 	iiRelojlocal      TypeClock // Valor de mi reloj local
 	ilMislefs         Lefs      // Estructura de datos del simulador
 	IlEventos         EventList //Lista de eventos a procesar
-	IlEventosRemoto0  EventList //Lista de eventos vecino más bajo
-	IlEventosRemoto1  EventList //Lista de eventos vecino más alto
 	IlEventosRemotos  []EventList
 	ivTransResults    []ResultadoTransition // slice dinamico con los resultados
 	EventNumber       float64               // cantidad de eventos ejecutados
 	CanalComunicacion chan Event
+	NodeId            int
 }
 
 // MakeMotorSimulation : inicializar SimulationEngine struct
@@ -46,8 +45,8 @@ func MakeMotorSimulation(alLaLef Lefs) SimulationEngine {
 	m.iiRelojlocal = 0
 	m.ilMislefs = alLaLef
 	m.IlEventos = MakeEventList(100) //aun siendo dinamicos...
-	m.IlEventosRemotos = make([]EventList, 0, TOTAL_REDES)
-	for i := 0; i <= TOTAL_REDES; i++ {
+	m.IlEventosRemotos = make([]EventList, TOTAL_REDES, TOTAL_REDES)
+	for i := 0; i < TOTAL_REDES; i++ {
 		m.IlEventosRemotos[i] = MakeEventList(100)
 	}
 
@@ -127,7 +126,7 @@ func (se *SimulationEngine) fireEnabledTransitions(aiLocalClock TypeClock, nodeI
 }
 
 // tratarEventos : Accede a lista eventos y trata todos con tiempo aiTiempo
-func (se *SimulationEngine) tratarEventos(nodeId int) {
+func (se *SimulationEngine) tratarEventos() {
 	var leEvento Event
 	aiTiempo := se.iiRelojlocal
 
@@ -151,16 +150,17 @@ func (se *SimulationEngine) tratarEventos(nodeId int) {
 func (se *SimulationEngine) avanzarTiempo() TypeClock {
 	//	tiempoLocal := se.iiRelojlocal
 	tiempoLocalLista := se.IlEventos.tiempoPrimerEvento()
-	tiempoRemoto0 := se.IlEventosRemoto0.tiempoPrimerEvento()
-	tiempoRemoto1 := se.IlEventosRemoto1.tiempoPrimerEvento()
+	tiempoRemotoMenor := se.obtenerMenorTiempoEntreListas()
 
 	nextTime := TypeClock(-1)
+	// Si tengo eventos en mi lista local, los tendré en cuenta.
 	if tiempoLocalLista != -1 {
 		//fmt.Println("Debo tener en cuenta la lista local")
-		nextTime = Mins(tiempoRemoto0, tiempoRemoto1, tiempoLocalLista)
+		nextTime = Mins([]TypeClock{tiempoRemotoMenor, tiempoLocalLista})
+		// Si no -> Directamente implica que tengo Look Ahead.
 	} else {
 		//fmt.Println("NO Debo tener en cuenta la lista local")
-		nextTime = Mins(tiempoRemoto0, tiempoRemoto1)
+		nextTime = tiempoRemotoMenor
 	}
 
 	//fmt.Println("Tiempo remoto 0 más bajo:" + fmt.Sprint(tiempoRemoto0))
@@ -168,21 +168,37 @@ func (se *SimulationEngine) avanzarTiempo() TypeClock {
 	//fmt.Println("Tiempo local lista:" + fmt.Sprint(tiempoLocalLista))
 	//fmt.Println("Tiempo local:" + fmt.Sprint(tiempoLocal))
 
-	se.IlEventosRemoto0.eliminaEventoConTiempo(nextTime)
-	se.IlEventosRemoto1.eliminaEventoConTiempo(nextTime)
+	// Limpiar eventos...
+	for i := 0; i < TOTAL_REDES; i++ {
+		if i != se.NodeId {
+			se.IlEventosRemotos[i].eliminaPrimerEvento()
+		}
+	}
 
 	fmt.Println("NEXT CLOCK...... : ", nextTime)
 
 	return nextTime
 }
 
-func Mins(value TypeClock, values ...TypeClock) TypeClock {
-	for _, v := range values {
-		if v < value {
-			value = v
+func (se *SimulationEngine) obtenerMenorTiempoEntreListas() TypeClock {
+	var relojesRemotos []TypeClock
+	for i := 0; i < TOTAL_REDES; i++ {
+		if i != se.NodeId {
+			relojesRemotos = append(relojesRemotos, se.IlEventosRemotos[i].tiempoPrimerEvento())
 		}
 	}
-	return value
+
+	return Mins(relojesRemotos)
+}
+
+func Mins(values []TypeClock) TypeClock {
+	minValue := values[0]
+	for _, value := range values {
+		if value < minValue {
+			minValue = value
+		}
+	}
+	return minValue
 }
 
 // devolverResultados : Mostrar los resultados de la simulacion
@@ -207,7 +223,7 @@ func (se SimulationEngine) devolverResultados() {
 }
 
 // SimularUnpaso de una RdP con duración disparo >= 1
-func (se *SimulationEngine) simularUnpaso(CicloFinal TypeClock, nodeId int) {
+func (se *SimulationEngine) simularUnpaso(CicloFinal TypeClock) {
 	se.ilMislefs.actualizaSensibilizadas(se.iiRelojlocal)
 
 	fmt.Println("-----------Stack de transiciones sensibilizadas---------")
@@ -215,7 +231,7 @@ func (se *SimulationEngine) simularUnpaso(CicloFinal TypeClock, nodeId int) {
 	fmt.Println("-----------Final Stack de transiciones---------")
 
 	// Fire enabled transitions and produce events
-	se.fireEnabledTransitions(se.iiRelojlocal, nodeId)
+	se.fireEnabledTransitions(se.iiRelojlocal, se.NodeId)
 
 	fmt.Println("-----------Lista eventos después de disparos---------")
 	se.IlEventos.Imprime()
@@ -223,39 +239,24 @@ func (se *SimulationEngine) simularUnpaso(CicloFinal TypeClock, nodeId int) {
 
 	//for len(se.IlEventos) == 0 {
 	//fmt.Println("Lista de eventos locales vacía. Espero...")
-	if len(se.IlEventosRemoto0) == 0 {
-		//fmt.Println("[BLOCK] No tengo información de la LISTA 0. Requesting look ahead...")
-		NODES[nodeId].Send(Message{ID: 0, Type: REQUEST_TIME, Source: NODES[nodeId], EventList: EventList{}}, NODES[reverseObtenerIDVecino(0, nodeId)])
-	}
-	if len(se.IlEventosRemoto1) == 0 {
-		//fmt.Println("[BLOCK] No tengo información de la LISTA 1. Requesting look ahead...")
-		NODES[nodeId].Send(Message{ID: 0, Type: REQUEST_TIME, Source: NODES[nodeId], EventList: EventList{}}, NODES[reverseObtenerIDVecino(1, nodeId)])
-	}
-	time.Sleep(50 * time.Millisecond)
 
-	if len(se.IlEventosRemoto0) != 0 || len(se.IlEventosRemoto1) != 0 {
-		fmt.Println("Todas mis listas REMOTAS están ready. Avanzamos reloj a tiempo menor...\n" +
-			fmt.Sprint(se.IlEventosRemoto0) + " | " + fmt.Sprint(se.IlEventosRemoto1))
-		se.iiRelojlocal = se.avanzarTiempo()
-		if se.iiRelojlocal == -1 {
-			se.iiRelojlocal = CicloFinal
+	for i := 0; i < TOTAL_REDES; i++ {
+		if i != se.NodeId && len(se.IlEventosRemotos[i]) == 0 {
+			NODES[se.NodeId].Send(Message{ID: 0, Type: REQUEST_TIME, Source: NODES[se.NodeId], EventList: EventList{}}, NODES[i])
 		}
-		fmt.Println("Se ha adelantado el reloj: ", fmt.Sprint(se.iiRelojlocal))
 	}
 
-	//}
+	time.Sleep(250 * time.Millisecond)
 
-	// advance local clock to soonest available event
-	/**
+	fmt.Println("Todas mis listas REMOTAS están ready. Avanzamos reloj a tiempo menor...\n")
+	//fmt.Sprint(se.IlEventosRemoto0) + " | " + fmt.Sprint(se.IlEventosRemoto1))
 	se.iiRelojlocal = se.avanzarTiempo()
 	if se.iiRelojlocal == -1 {
 		se.iiRelojlocal = CicloFinal
 	}
-	**/
+	fmt.Println("Se ha adelantado el reloj: ", fmt.Sprint(se.iiRelojlocal))
 
-	// Los que sean míos los trato
-	// if events exist for current local clock, process them
-	se.tratarEventos(nodeId)
+	se.tratarEventos()
 
 	// enviar mensajes null a todos los PLs vecinos con un
 	//estampilla de tiempo que indique el límite mínimo de tiempo
@@ -266,19 +267,6 @@ func (se *SimulationEngine) simularUnpaso(CicloFinal TypeClock, nodeId int) {
 	fmt.Println("--------------------------------------")
 }
 
-/**
-func solicitarTiempos(nodeId int, se *SimulationEngine) {
-	NODES[nodeId].Send(Message{ID: 0, Type: REQUEST_TIME, Source: NODES[nodeId], EventList: EventList{}})
-	fmt.Println("Solicitando tiempos...")
-	for len(se.IlEventosRemoto0) == 0 || len(se.IlEventosRemoto1) == 0 {
-		fmt.Println("Esperando respuesta ante la solicitud de tiempos..." + fmt.Sprint(se.IlEventos) + "|" + fmt.Sprint(se.IlEventosRemoto0) + "|" + fmt.Sprint(se.IlEventosRemoto1))
-		time.Sleep(250 * time.Millisecond)
-
-	}
-
-	fmt.Println("---- DESBLOQUEO OK -----")
-}
-**/
 func traducirIdTransicion(evento Event) Event {
 	if evento.IiTransicion == -3 {
 		evento.IiTransicion = 2
@@ -338,6 +326,7 @@ func esEventoMio(evento Event, red TransitionList) bool {
 func (se *SimulationEngine) SimularPeriodo(CicloInicial, CicloFinal TypeClock, NodeId int) {
 	fmt.Println("--------------- DISTRIBUTED SIMULATION STARTS! ------------------")
 
+	se.NodeId = NodeId
 	se.CanalComunicacion = make(chan Event)
 	go NODES[NodeId].LaunchReceiver(se)
 
@@ -357,7 +346,7 @@ func (se *SimulationEngine) SimularPeriodo(CicloInicial, CicloFinal TypeClock, N
 		fmt.Println("RELOJ LOCAL !!!  = ", se.iiRelojlocal)
 		//se.ilMislefs.ImprimeLefs()
 
-		se.simularUnpaso(CicloFinal, NodeId)
+		se.simularUnpaso(CicloFinal)
 	}
 
 	elapsedTime := time.Since(ldIni)
