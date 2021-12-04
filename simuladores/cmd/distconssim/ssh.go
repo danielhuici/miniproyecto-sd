@@ -1,4 +1,4 @@
-package distconssim
+package main
 
 import (
 	"distconssim"
@@ -7,8 +7,6 @@ import (
 	"log"
 	"strconv"
 )
-
-type SSH int
 
 func SSHExecute(node distconssim.Node, command string) {
 	// Start new ssh connection with private key.
