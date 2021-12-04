@@ -139,12 +139,11 @@ func (n Node) decodeMessage(decodedMessage Message, se *SimulationEngine) {
 		//se.IlEventos.Imprime()
 		//fmt.Println("------------- FIN LISTA DE EVENTOS TRAS RECIBIR --------------")
 		for _, event := range decodedMessage.EventList {
-			event = traducirIdTransicion(event)
 			if event.IsNull {
 				n.insertarEventoRemoto(decodedMessage.EventList[0], se, decodedMessage.Source.ID)
 			} else {
-				if esEventoMio(event, se.ilMislefs.IaRed) {
-					se.IlEventos.inserta(retraducirIdTransicion(event))
+				if se.esEventoMio(event) {
+					se.IlEventos.inserta(se.eventoDeRemotoAlocal(event))
 					//fmt.Println("El ID transicion del evento ahora es: " + fmt.Sprint(event.IiTransicion))
 				}
 			}
@@ -163,7 +162,6 @@ func (n Node) decodeMessage(decodedMessage Message, se *SimulationEngine) {
 }
 
 func (n Node) insertarEventoRemoto(event Event, se *SimulationEngine, source int) {
-	event = traducirIdTransicion(event)
 	se.IlEventosRemotos[source].inserta(event)
 }
 

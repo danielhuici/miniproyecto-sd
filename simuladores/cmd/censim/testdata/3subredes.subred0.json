@@ -6,7 +6,7 @@
       "ii_idglobal": 0,
       "ii_valor": 0,
       "ii_tiempo": 0,
-      "ii_duracion_disparo": 4,
+      "ii_duracion_disparo": 1,
       "ii_listactes_IUL": [
         [
           0,
@@ -15,11 +15,11 @@
       ],
       "ii_listactes_PUL": [
         [
-          -3,
+          2,
           -1
         ],
         [
-          -4,
+          3,
           -1
         ]
       ],

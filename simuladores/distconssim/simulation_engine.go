@@ -80,7 +80,7 @@ func (se *SimulationEngine) dispararTransicion(ilTr IndLocalTrans, nodeId int) {
 			fmt.Println("A ver IndLocalTrans 0: " + fmt.Sprint(trList[IndLocalTrans(0)]))
 
 		*/
-		trCo[0] = retraducirIdTransicionInt(trCo[0])
+		trCo[0] = se.iulDeRemotoAlocal(trCo[0])
 		trList[IndLocalTrans(trCo[0])].updateFuncValue(TypeConst(trCo[1]))
 	}
 
@@ -92,12 +92,13 @@ func (se *SimulationEngine) dispararTransicion(ilTr IndLocalTrans, nodeId int) {
 			IndLocalTrans(trCo[0]),
 			TypeConst(trCo[1]), false}
 
-		if eventoGenerado.IiTransicion < 0 {
-			ListaEventosEnviar.inserta(eventoGenerado)
-			fmt.Println("El evento pertenece a otra subred: " + fmt.Sprintf("%v", eventoGenerado.IiTransicion) + " . SEND!")
-		} else {
+		if se.esEventoMio(eventoGenerado) {
 			fmt.Println("El evento generado nos pertenece.")
 			se.IlEventos.inserta(eventoGenerado)
+
+		} else {
+			fmt.Println("El evento pertenece a otra subred: " + fmt.Sprintf("%v", eventoGenerado.IiTransicion))
+			ListaEventosEnviar.inserta(eventoGenerado)
 		}
 	}
 
@@ -237,9 +238,6 @@ func (se *SimulationEngine) simularUnpaso(CicloFinal TypeClock) {
 	se.IlEventos.Imprime()
 	fmt.Println("-----------Final lista eventos---------")
 
-	//for len(se.IlEventos) == 0 {
-	//fmt.Println("Lista de eventos locales vacía. Espero...")
-
 	for i := 0; i < TOTAL_REDES; i++ {
 		if i != se.NodeId && len(se.IlEventosRemotos[i]) == 0 {
 			NODES[se.NodeId].Send(Message{ID: 0, Type: REQUEST_TIME, Source: NODES[se.NodeId], EventList: EventList{}}, NODES[i])
@@ -267,52 +265,33 @@ func (se *SimulationEngine) simularUnpaso(CicloFinal TypeClock) {
 	fmt.Println("--------------------------------------")
 }
 
-func traducirIdTransicion(evento Event) Event {
-	if evento.IiTransicion == -3 {
-		evento.IiTransicion = 2
-	} else if evento.IiTransicion == -4 {
-		evento.IiTransicion = 3
-	} else if evento.IiTransicion == -2 {
-		evento.IiTransicion = 1
+func (se *SimulationEngine) eventoDeRemotoAlocal(evento Event) Event {
+	for i, trans := range se.ilMislefs.IaRed {
+		if evento.IiTransicion == trans.IiIndLocal {
+			evento.IiTransicion = IndLocalTrans(i)
+		}
 	}
-
 	return evento
 }
 
-func retraducirIdTransicion(evento Event) Event {
-	fmt.Println("Retraducimos el evento: " + fmt.Sprint(evento.IiTransicion))
-	if evento.IiTransicion == 2 {
-		evento.IiTransicion = 0
-	} else if evento.IiTransicion == 3 {
-		evento.IiTransicion = 0
-	} else if evento.IiTransicion == 1 {
-		evento.IiTransicion = 1
-	}
-
-	//fmt.Println("El ID transicion del evento ahora es: " + fmt.Sprint(evento.IiTransicion))
-	return evento
-}
-
-func retraducirIdTransicionInt(id int) int {
-	if id == 2 {
-		return 0
-	} else if id == 3 {
-		return 0
-	} else if id == 1 {
-		return 1
+func (se *SimulationEngine) iulDeRemotoAlocal(id int) int {
+	for _, trans := range se.ilMislefs.IaRed {
+		for i, iul := range trans.TransConstIul {
+			if iul[0] == id {
+				return i
+			}
+		}
 	}
 
 	return id
 }
 
-func esEventoMio(evento Event, red TransitionList) bool {
-
-	for _, trans := range red {
+// Verifica si un evento concreto ha de ser procesado en
+// la red local
+func (se *SimulationEngine) esEventoMio(evento Event) bool {
+	for _, trans := range se.ilMislefs.IaRed {
 		if trans.IiIndLocal == evento.IiTransicion {
-			fmt.Println("El evento " + fmt.Sprintf("%v", evento.IiTransicion) + " es mío")
 			return true
-		} else {
-			fmt.Println("El evento: " + fmt.Sprintf("%v", evento.IiTransicion) + " no es mío")
 		}
 	}
 
